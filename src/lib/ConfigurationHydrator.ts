@@ -3,7 +3,7 @@ import { Duration } from 'typed-duration'
 import { parse } from 'url'
 import { getEnv } from './EnvFunction'
 import { CustomSSL } from './GrpcClient'
-import * as ZB from './interfaces'
+import * as ZB from './interfaces-1.0'
 import { Loglevel, ZBClientOptions } from './interfaces-published-contract'
 import { OAuthProviderConfig } from './OAuthProvider'
 
@@ -86,17 +86,24 @@ export class ConfigurationHydrator {
 		}
 	}
 
-	private static readCustomSSLFromEnvironment(): Partial<CustomSSL> {
+	private static readCustomSSLFromEnvironment(): {
+		customSSL: Partial<CustomSSL>
+	} {
 		const rootCerts = ConfigurationHydrator.ENV()
 			.ZEEBE_CLIENT_SSL_ROOT_CERTS_PATH
 		const certChain = ConfigurationHydrator.ENV()
 			.ZEEBE_CLIENT_SSL_CERT_CHAIN_PATH
 		const privateKey = ConfigurationHydrator.ENV()
 			.ZEEBE_CLIENT_SSL_PRIVATE_KEY_PATH
-		return {
+
+		const customSSL = {
 			certChain: certChain ? fs.readFileSync(certChain) : undefined,
 			privateKey: privateKey ? fs.readFileSync(privateKey) : undefined,
 			rootCerts: rootCerts ? fs.readFileSync(rootCerts) : undefined,
+		}
+
+		return {
+			customSSL,
 		}
 	}
 

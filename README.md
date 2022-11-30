@@ -8,7 +8,7 @@
 
 [![Commitizen friendly](https://img.shields.io/badge/commitizen-friendly-brightgreen.svg)](http://commitizen.github.io/cz-cli/)
 
-![Test on Camunda Cloud](https://github.com/jwulf/zeebe-client-node-js/processes/Test%20on%20Camunda%20Cloud/badge.svg)
+![Test on Camunda 8 SaaS](https://github.com/camunda-community-hub/zeebe-client-node-js/workflows/Test%20on%20Camunda%208%20SaaS/badge.svg)
 
 This is a Node.js gRPC client for [Zeebe](https://zeebe.io), the workflow engine in [Camunda Platform 8](https://camunda.com/platform/). It is written in TypeScript and transpiled to JavaScript in the `dist` directory.
 
@@ -24,6 +24,7 @@ Get a hosted instance of Zeebe on [Camunda Cloud](https://camunda.io).
 
 -   [ Versioning ](#versioning)
 -   [ Compatible Node Versions ](#node-versions)
+-   [ Breaking changes in 8.1.0 ](#breaking-8.1.0)
 -   [ Breaking changes in 1.0.0 ](#breaking-1.0.0)
 -   [ gRPC Implementation ](#grpc-implementation)
 -   [ Type difference from other Zeebe clients ](#type-difference)
@@ -111,6 +112,12 @@ Version 1.x of the package: Node versions <=16.x. Version 1.x uses the C-based g
 
 Version 2.x and later of the package: Node versions 12.22.5+, 14.17.5+, or 16.6.1+. Version 2.x uses the pure JS implementation of the gRPC library, and requires a fix to the `nghttp2` library in Node (See [#201](https://github.com/camunda-community-hub/zeebe-client-node-js/issues/201)).
 
+<a name="breaking-8.1.0"></a>
+
+## Breaking changes in Zeebe 8.1.0
+
+All deprecated APIs are removed in the 8.1.0 package version. If your code relies on deprecated methods and method signatures, you need to use a package version prior to 8.1.0 or update your application code.
+
 <a name="breaking-1.0.0"></a>
 
 ## Breaking changes in Zeebe 1.0.0
@@ -152,7 +159,7 @@ const timeoutMs = Duration.milliseconds.of(30000) // 30s timeout in milliseconds
 
 Using the value types makes your code more semantically specific.
 
-There are four timeouts to take into account.
+There are five timeouts to take into account.
 
 The first is the job `timeout`. This is the amount of time that the broker allocates exclusive responsibility for a job to a worker instance. By default, this is 60 seconds. This is the default value set by this client library. See "[Job Workers](#job-workers)".
 
@@ -164,7 +171,9 @@ The most significant use of the `requestTimeout` is when using the `createProces
 
 The third is the `longpoll` duration. This is the amount of time that the job worker holds a long poll request to activate jobs open.
 
-The final one is the maximum back-off delay in client-side gRPC command retries. See "[Client-side gRPC retry in ZBClient](#client-side-retry)".
+The fourth is the maximum back-off delay in client-side gRPC command retries. See "[Client-side gRPC retry in ZBClient](#client-side-retry)".
+
+Finally, the `connectionTolerance` option for ZBClient can also take a typed duration. This value is used to buffer reporting connection errors while establishing a connection - for example with Camunda SaaS, which requires a token exchange as part of the connection process.
 
 ## Quick Start
 
@@ -316,7 +325,7 @@ const zbWorker = zbc.createWorker({
 	taskHandler: handler,
     onReady: () => console.log(`Worker connected!`),
     onConnectionError: () => console.log(`Worker disconnected!`),
-    connectionTolerance: Duration.seconds.of(3.5)
+    connectionTolerance: Duration.seconds.of(3.5) // 3500 milliseconds
 })
 ```
 
@@ -379,7 +388,7 @@ ZEEBE_SECURE_CONNECTION=true
 
 You can use a self-signed SSL certificate with the Zeebe client. You need to provide the root certificates, the private key and the SSL cert chain as Buffers. You can pass them into the ZBClient constructor:
 
-```
+```typescript
 const rootCertsPath = '/path/to/rootCerts'
 const privateKeyPath = '/path/to/privateKey'
 const certChainPath = '/path/to/certChain'
@@ -495,9 +504,9 @@ With no relevant environment variables set, it will default to localhost on the 
 
 The following environment variable configurations are possible with the Zero-conf constructor:
 
-Camunda Cloud:
+Camunda SaaS:
 
-```
+```bash
 ZEEBE_ADDRESS
 ZEEBE_CLIENT_SECRET
 ZEEBE_CLIENT_ID
@@ -505,13 +514,13 @@ ZEEBE_CLIENT_ID
 
 Self-hosted or local broker (no TLS or OAuth):
 
-```
+```bash
 ZEEBE_ADDRESS
 ```
 
 Self-hosted with self-signed SSL certificate:
 
-```
+```bash
 ZEEBE_CLIENT_SSL_ROOT_CERTS_PATH
 ZEEBE_CLIENT_SSL_PRIVATE_KEY_PATH
 ZEEBE_CLIENT_SSL_CERT_CHAIN_PATH
@@ -520,7 +529,7 @@ ZEEBE_SECURE_CONNECTION=true
 
 Self-hosted or local broker with OAuth + TLS:
 
-```
+```bash
 ZEEBE_CLIENT_ID
 ZEEBE_CLIENT_SECRET
 ZEEBE_TOKEN_AUDIENCE
@@ -530,7 +539,7 @@ ZEEBE_ADDRESS
 
 Basic Auth:
 
-```
+```bash
 ZEEBE_BASIC_AUTH_PASSWORD
 ZEEBE_BASIC_AUTH_USERNAME
 ```
@@ -565,9 +574,12 @@ const ZB = require('zeebe-node')
 
 const zbc = new ZB.ZBClient()
 
-const zbWorker = zbc.createWorker('demo-service', handler)
+const zbWorker = zbc.createWorker({
+	taskType: 'demo-service',
+	taskHandler: handler,
+})
 
-function handler(job, _, worker) {
+function handler(job) {
 	worker.log('Task variables', job.variables)
 
 	// Task worker business logic goes here
@@ -583,25 +595,20 @@ Here is an example job:
 
 ```javascript
 
-{ key: "578",
-  type: "demo-service",
-  workflowInstanceKey: "2251799813781091",
-  processInstanceKey: "2251799813781091",
-  bpmnProcessId: "test-process",
-  workflowDefinitionVersion: 1,
-  processDefinitionVersion: 1,
-  workflowDefinitionKey: "2251799813775439",
-  processDefinitionKey: "2251799813775439",
-  elementId: "Activity_14thgzk",
-  elementInstanceKey: "2251799813781095",
-  customHeaders: {
-    "io.camunda.zeebe:formKey": "camunda-forms:bpmn:userTaskForm_3jbgs4p"
-  },
-  worker: "a3662d31-fc67-48dd-90e6-da74371d83ba",
-  retries: 1,
-  deadline: "1654012834438",
-  variables: { testData: "something" }
-}
+{ key: '578',
+  type: 'demo-service',
+  jobHeaders:
+   { processInstanceKey: '574',
+     bpmnProcessId: 'test-process',
+     processDefinitionVersion: 1,
+     processKey: '3',
+     elementId: 'ServiceTask_0xdwuw7',
+     elementInstanceKey: '577' },
+  customHeaders: '{}',
+  worker: 'test-worker',
+  retries: 3,
+  deadline: '1546915422636',
+  variables: { testData: 'something' } }
 ```
 
 The worker can be configured with options. To do this, you should use the object parameter constructor.
@@ -638,11 +645,13 @@ _Note: this behaviour is for the ZBWorker only. The ZBBatchWorker does not manag
 When a task handler throws an unhandled exception, the library will fail the job. Zeebe will then retry the job according to the retry settings of the task. Sometimes you want to halt the entire process so you can investigate. To have the library cancel the process on an unhandled exception, pass in `{failProcessOnException: true}` to the `createWorker` call:
 
 ```typescript
-const { ZBClient } = require('zeebe-node')
+import { ZBClient } from 'zeebe-node'
 
 const zbc = new ZBClient()
 
-zbc.createWorker('console-log', maybeFaultyHandler, {
+zbc.createWorker({
+	taskType: 'console-log',
+	taskHandler: maybeFaultyHandler,
 	failProcessOnException: true,
 })
 ```
@@ -685,20 +694,23 @@ These are read-only JavaScript objects in the Zeebe Node client. However, they a
 
 Both process variables and custom headers are stored in the broker as a dictionary of named strings. That means that the variables and custom headers are JSON.parsed in the Node client when it fetches the job, and any update passed to the `success()` function is JSON.stringified.
 
-If you accidentally pass in a circular JSON structure to `complete()` - like, for example the response object from an HTTP call - it will throw, as this cannot be serialised to a string.
+If you pass in a circular JSON structure to `complete()` - like, for example the response object from an HTTP call - it will throw, as this cannot be serialised to a string.
 
 To update a key deep in the object structure of a process variable, you can use the [deepmerge utility](https://www.npmjs.com/package/deepmerge):
 
 ```TypeScript
 const merge = require('deepmerge')
-const { ZBClient } = require('zeebe-node')
+import { ZBClient } from 'zeebe-node'
 
 const zbc = new ZBClient()
 
-zbc.createWorker('some-task', job => {
-    const { people } = job.variables
-    // update bob's age, keeping all his other properties the same
-    job.complete(merge(people, { bob: { age: 23 } }))
+zbc.createWorker({
+    taskType: 'some-task',
+    taskHandler: job => {
+        const { people } = job.variables
+        // update bob's age, keeping all his other properties the same
+        job.complete(merge(people, { bob: { age: 23 } }))
+    }
 })
 ```
 
@@ -710,8 +722,8 @@ Process variables and custom headers are untyped in the Zeebe broker, however th
 // No type checking - totally dynamic and unchecked
 zbc.createWorker<any>({
     taskType: 'yolo-jobs',
-    taskHandler: (job, _, worker) => {
-        worker.log(`Look ma - ${job.variables.anything.goes.toUpperCase()}`)
+    taskHandler: (job) => {
+        console.log(`Look ma - ${job.variables?.anything?.goes?.toUpperCase()}`)
         job.complete({what: job.variables.could.possibly.go.wrong})
     }
 })
@@ -730,9 +742,9 @@ You can also use the `fetchVariable` parameter when creating a worker. Pass an a
 ```javascript
 zbc.createWorker({
 	taskType: 'process-favorite-albums',
-	taskHandler: (job, _, worker) => {
+	taskHandler: job => {
 		const { name, albums } = job.variables
-		worker.log(`${name} has the following albums: ${albums.join(', ')}`)
+		console.log(`${name} has the following albums: ${albums.join(', ')}`)
 		job.complete()
 	},
 	fetchVariable: ['name', 'albums'],
@@ -749,9 +761,9 @@ interface Variables {
 
 zbc.createWorker<Variables>({
     taskType: 'process-favorite-albums',
-    taskHandler: (job, _, worker) => {
+    taskHandler: (job) => {
         const { name, albums = [] } = job.variables
-        worker.log(`${name} has the following albums: ${albums?.join?.(', ')}`)
+        console.log(`${name} has the following albums: ${albums?.join?.(', ')}`)
         job.complete()
     },
     fetchVariable: ['name', 'albums'],
@@ -772,10 +784,10 @@ You can turn off the type-safety by typing the worker as `any`:
 ```TypeScript
 zbc.createWorker<any>({
     taskType: 'process-favorite-albums',
-    taskHandler: (job, _, worker) => {
+    taskHandler: (job) => {
         const { name, albums = [] } = job.variables
         // TS 3.7 safe access to .join _and_ safe call, to prevent run-time exceptions
-        worker.log(`${name} has the following albums: ${albums?.join?.(', ')}`)
+        console.log(`${name} has the following albums: ${albums?.join?.(', ')}`)
         job.complete()
     },
     fetchVariable: ['name', 'albums'],
@@ -911,8 +923,8 @@ const zbc = new ZBClient()
 // Helper function to find a job by its key
 const findJobByKey = jobs => key => jobs.filter(job => job.jobKey === id)?.[0] ?? []
 
-const handler = async (jobs: BatchedJob[], worker: ZBBatchWorker) => {
-    worker.log("Let's do this!")
+const handler = async (jobs: BatchedJob[]) => {
+    console.log("Let's do this!")
     const {jobKey, variables} = job
     // Construct some hypothetical payload with correlation ids and requests
     const req = jobs.map(job => ({id: jobKey, data: variables.request}))
@@ -1357,9 +1369,9 @@ const giftSuggester = zbc.createWorker<
     InputVariables,
     CustomHeaders,
     OutputVariables>
-    ('get-gift-suggestion', (job, complete) => {
+    ('get-gift-suggestion', (job) => {
         const suggestedGift = `${job.customHeaders.occasion} ${job.variables.preferences.beverage}`
-        complete.success({ suggestedGift })
+        job.complete({ suggestedGift })
 })
 ```
 
@@ -1368,13 +1380,15 @@ If you decouple the declaration of the job handler from the `createWorker` call,
 ```TypeScript
 import { ZBWorkerTaskHandler } from 'zeebe-node'
 
-function getGiftSuggestion(job, complete): ZBWorkerTaskHandler<InputVariables, CustomHeaders, OutputVariables> {
+function getGiftSuggestion(job): ZBWorkerTaskHandler<InputVariables, CustomHeaders, OutputVariables> {
     const suggestedGift = `${job.customHeaders.occasion} ${job.variables.preferences.beverage}`
-    complete.success({ suggestedGift })
+    job.complete({ suggestedGift })
 }
 
-const giftSuggester = zbc.createWorker('get-gift-suggestion', getGiftSuggestion)
-
+const giftSuggester = zbc.createWorker({
+    taskType: 'get-gift-suggestion',
+    taskHandler: getGiftSuggestion
+})
 ```
 
 <a name = "run-time-safety"></a>

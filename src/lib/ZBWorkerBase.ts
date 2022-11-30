@@ -107,6 +107,7 @@ export class ZBWorkerBase<
 	private pollLoop: NodeJS.Timeout
 	private pollMutex: boolean = false
 	private backPressureRetryCount: number = 0
+	private fetchVariable: (keyof WorkerInputVariables)[] | undefined
 
 	constructor({
 		grpcClient,
@@ -178,10 +179,7 @@ export class ZBWorkerBase<
 		}
 		this.grpcClient.on(ConnectionStatusEvent.unknown, onReady)
 		this.grpcClient.on(ConnectionStatusEvent.ready, onReady)
-		this.cancelWorkflowOnException =
-			options.failWorkflowOnException ??
-			options.failProcessOnException ??
-			false
+		this.cancelWorkflowOnException = options.failProcessOnException ?? false
 		this.zbClient = zbClient
 		this.grpcClient.topologySync().catch(e => {
 			// Swallow exception to avoid throwing if retries are off
@@ -189,6 +187,8 @@ export class ZBWorkerBase<
 				this.emit(ConnectionStatusEvent.unknown)
 			}
 		})
+
+		this.fetchVariable = options.fetchVariable
 
 		this.logger = log
 		this.capacityEmitter = new EventEmitter()
@@ -274,7 +274,7 @@ export class ZBWorkerBase<
 
 	protected makeCompleteHandlers<T>(
 		thisJob: ZB.Job
-	): ZB.CompleteFn<T> & ZB.JobCompletionInterface<T> {
+	): ZB.JobCompletionInterface<T> & ZB.JobCompletionInterface<T> {
 		let methodCalled: string | undefined
 		const errorMsgOnPriorMessageCall = (
 			thisMethod: string,
@@ -301,13 +301,20 @@ You should call only one job action method in the worker handler. This is a bug 
 				.cancelProcessInstance(job.processInstanceKey)
 				.then(() => ZB.JOB_ACTION_ACKNOWLEDGEMENT)
 
-
 		const failJob = (job: ZB.Job) => (
 			errorMessageOrFailureConfig: string | ZB.JobFailureConfiguration,
 			retries?: number
 		) => {
-			const errorMessage = (typeof errorMessageOrFailureConfig === "string") ? errorMessageOrFailureConfig : (errorMessageOrFailureConfig as ZB.JobFailureConfiguration).errorMessage
-			const retryBackOff = (typeof errorMessageOrFailureConfig === "string") ? 0 : (errorMessageOrFailureConfig as ZB.JobFailureConfiguration).retryBackOff ?? 0
+			const errorMessage =
+				typeof errorMessageOrFailureConfig === 'string'
+					? errorMessageOrFailureConfig
+					: (errorMessageOrFailureConfig as ZB.JobFailureConfiguration)
+							.errorMessage
+			const retryBackOff =
+				typeof errorMessageOrFailureConfig === 'string'
+					? 0
+					: (errorMessageOrFailureConfig as ZB.JobFailureConfiguration)
+							.retryBackOff ?? 0
 			return this.failJob({ job, errorMessage, retries, retryBackOff })
 		}
 
@@ -330,16 +337,10 @@ You should call only one job action method in the worker handler. This is a bug 
 			complete: errorMsgOnPriorMessageCall('job.complete', succeed),
 			error: errorMsgOnPriorMessageCall('error', errorJob(thisJob)),
 			fail: errorMsgOnPriorMessageCall('job.fail', fail),
-			failure: errorMsgOnPriorMessageCall('complete.failure', fail),
 			forward: errorMsgOnPriorMessageCall('job.forward', () => {
 				this.drainOne()
 				return ZB.JOB_ACTION_ACKNOWLEDGEMENT
 			}),
-			forwarded: errorMsgOnPriorMessageCall('complete.forwarded', () => {
-				this.drainOne()
-				return ZB.JOB_ACTION_ACKNOWLEDGEMENT
-			}),
-			success: errorMsgOnPriorMessageCall('complete.success', succeed),
 		}
 	}
 
@@ -347,7 +348,7 @@ You should call only one job action method in the worker handler. This is a bug 
 		job,
 		errorMessage,
 		retries,
-		retryBackOff
+		retryBackOff,
 	}: {
 		job: ZB.Job
 		errorMessage: string
@@ -359,7 +360,7 @@ You should call only one job action method in the worker handler. This is a bug 
 				errorMessage,
 				jobKey: job.key,
 				retries: retries ?? job.retries - 1,
-				retryBackOff: retryBackOff ?? 0
+				retryBackOff: retryBackOff ?? 0,
 			})
 			.then(() => ZB.JOB_ACTION_ACKNOWLEDGEMENT)
 			.finally(() => {
@@ -521,7 +522,9 @@ You should call only one job action method in the worker handler. This is a bug 
 			timeout: this.timeout,
 			type: this.taskType,
 			worker: this.id,
+			fetchVariable: this.fetchVariable as string[],
 		}
+
 		this.logger.logDebug(
 			`Requesting ${amount} jobs on [${id}] with requestTimeout ${Duration.value.of(
 				requestTimeout

@@ -1,4 +1,4 @@
-import * as ZB from './interfaces'
+import * as ZB from './interfaces-1.0'
 import { ZBClientOptions } from './interfaces-published-contract'
 
 function isConfig(
@@ -9,7 +9,14 @@ function isConfig(
 
 const cleanEmpty = obj =>
 	Object.entries(obj)
-		.map(([k, v]) => [k, v && typeof v === 'object' ? cleanEmpty(v) : v])
+		.map(([k, v]) => [
+			k,
+			v && typeof v === 'object'
+				? !Array.isArray(v)
+					? cleanEmpty(v)
+					: v
+				: v,
+		])
 		.reduce((a, [k, v]) => (v == null ? a : { ...a, [k]: v }), {})
 
 export function decodeCreateZBWorkerSig<
